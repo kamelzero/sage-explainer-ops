@@ -3,8 +3,10 @@ import torch, random
 from torch_geometric.data import Data
 
 def generate_access_graph(n_users: int = 30,
+                          n_user_clusters: int = 3,
                           n_systems: int = 12,
                           n_resources: int = 6,
+                          p_cross_user_cluster: float = 0.02,
                           p_login: float = 0.25,
                           p_lateral: float = 0.05,
                           p_sys_access: float = 0.45,
@@ -61,6 +63,21 @@ def generate_access_graph(n_users: int = 30,
         for r in resources:
             if random.random() < p_sys_access:
                 edges.append((s, r))
+
+                    # 1) split users into clusters, then add extra intra-cluster edges
+    clusters   = torch.tensor_split(torch.tensor(users),
+                                    n_user_clusters, dim=0)
+    for cl in clusters:
+        for i, u in enumerate(cl):
+            for v in cl[i+1:]:
+                if random.random() < p_cross_user_cluster:
+                    edges.append((int(u), int(v)))
+
+    # 2) OPTIONAL: make systems talk to other systems
+    for i, s in enumerate(systems):
+        for t in systems[i+1:]:
+            if random.random() < 0.10:          # tune
+                edges.append((s, t))
 
     # make graph undirected
     edges += [(v, u) for (u, v) in edges]
