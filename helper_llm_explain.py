@@ -1,8 +1,46 @@
-# helper_openai_explain_v1.py
-import os, json
-from openai import OpenAI          # <-- new import
+from typing import Set
+import pandas as pd
+import json
+from openai import OpenAI
 
-client = OpenAI()                  # picks up OPENAI_API_KEY from env
+client = OpenAI()  # picks up OPENAI_API_KEY from env
+
+def build_edge_sentence_fn(users:   Set[int],
+                           systems: Set[int],
+                           resources:Set[int]):
+    """
+    Factory: returns a to_sentence(row) function bound to the three ID sets.
+    Usage
+    -----
+    to_sentence = build_edge_sentence_fn(users, systems, resources)
+    bullets = [to_sentence(r) for _, r in topk_edges.iterrows()]
+    """
+
+    def to_sentence(row: pd.Series) -> str:
+        u, v = int(row.src), int(row.dst)
+        w    = row.importance
+        kind = row.kind                 # 'login' | 'lateral' | 'sys→res'
+
+        if kind == 'login':
+            # decide direction for nicer wording
+            if u in users and v in systems:
+                return f"User {u} logs into system {v} (w={w:.2f})"
+            else:
+                return f"User {v} logs into system {u} (w={w:.2f})"
+
+        if kind == 'lateral':           # user ↔ user
+            return f"User {u} shares creds with user {v} (w={w:.2f})"
+
+        if kind == 'sys→res':           # system → resource
+            if u in systems and v in resources:
+                return f"System {u} accesses resource {v} (w={w:.2f})"
+            else:
+                return f"System {v} accesses resource {u} (w={w:.2f})"
+
+        # fallback for any unforeseen kind
+        return f"{u} – {v} (w={w:.2f}, kind={kind})"
+
+    return to_sentence
 
 def explain_edges_with_llm(edge_bullets: str,
                            model: str = "gpt-4o-mini",
