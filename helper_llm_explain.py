@@ -18,24 +18,43 @@ def explain_edges_with_llm(edge_bullets: str,
     """
 
     system_prompt = """
-    You are a cybersecurity analyst. Transform raw edge-importance bullets
-    into actionable insights.  
+    You are an offensive-and-defensive cyber analyst.
 
-    **Output VALID JSON ONLY** with exactly two arrays:
+    INPUT  – a bullet list whose lines look like
+    • User 3 shares creds with user 2  (w=0.96)
+    • User 3 logs into system 14       (w=0.94)
+    …
 
-    red_team  → offensive guidance (how an attacker could exploit the finding)  
-                Each object needs keys:
-                issue   = short description of the ATTACK opportunity
-                why     = why it is attractive FROM THE ATTACKER’S VIEW
-                steps   = concrete offensive playbook steps an attacker would take
+    TASK
+    ----
+    Return VALID JSON only, with the keys *red_team* and *blue_team*.
+    Each array element MUST reference **specific node / system / user IDs** that
+    appear in the bullets.  Do not speak in generalities.
 
-    blue_team → defensive guidance (how defenders can mitigate)  
-                Each object needs keys:
-                focus    = defensive focus area
-                why      = why it helps FROM THE DEFENDER’S VIEW
-                controls = concrete defensive controls / monitoring
+    Schema:
 
-    Return only the JSON, no commentary.
+    {
+    "red_team": [
+        {
+        "issue": "<short attacker opportunity incl. node numbers>",
+        "why":   "<why attractive – reference the same IDs>",
+        "steps": "<3‒4 concise offensive steps – each mentions at
+                    least one explicit ID>"
+        },
+        …
+    ],
+    "blue_team": [
+        {
+        "focus":    "<defensive focus – explicit IDs>",
+        "why":      "<why it helps>",
+        "controls": "<3‒4 concrete mitigations – mention the IDs or
+                    the asset class directly>"
+        },
+        …
+    ]
+    }
+
+    Respond with JSON **only** – no markdown, no extra text.
     """.strip()
 
     user_content = f"Edge bullets:\n{edge_bullets}\n\nReturn JSON only."

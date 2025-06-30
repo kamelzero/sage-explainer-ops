@@ -17,25 +17,26 @@ from torch_geometric.utils    import to_networkx
 # -------------------------------------------------------------------
 # 1  build the toy "access" graph
 # -------------------------------------------------------------------
-torch.manual_seed(42)
-node_types = ['user']*12 + ['system']*6 + ['resource']*4
-N = len(node_types)
+from random_access_graph import generate_access_graph
 
-x = torch.zeros((N, 3))
-for i in range(12):
-    x[i,0] = 1. if i in (0,1) else 0.       # admin bit
-    x[i,1] = random.randint(2,20)/20.        # login freq
-    x[i,2] = random.random()*0.5             # anomaly score
+# build a random graph
+data, meta = generate_access_graph(
+    n_users=50,
+    n_systems=20,
+    n_resources=10,
+    p_login=0.3,
+    p_lateral=0.08,
+    p_sys_access=0.5,
+    p_compromised=0.12,
+    seed=2025
+)
 
-edges = [(0,12),(0,13),(1,13),(2,12),(3,14),(4,15),(5,15),(6,16),(7,17),
-         (8,14),(9,16),(10,17),(11,13),
-         (3,2),(5,4),(6,2),(9,3),
-         (12,18),(13,19),(14,20),(15,21),(16,19),(17,20)]
-edge_index = torch.tensor(edges + [(j,i) for i,j in edges]).t()
-
-y = torch.zeros(N, dtype=torch.long); y[[3,5,6]] = 1   # compromised users
-mask = torch.zeros(N, dtype=torch.bool); mask[:12] = True
-data = Data(x=x, edge_index=edge_index, y=y, train_mask=mask)
+# ❶ rebuild node_types from meta
+node_types = ['user']     * len(meta['users']) \
+           + ['system']   * len(meta['systems']) \
+           + ['resource'] * len(meta['resources'])
+# length check
+assert len(node_types) == data.num_nodes
 
 # -------------------------------------------------------------------
 # 2  tiny GCN
@@ -53,7 +54,7 @@ opt = torch.optim.Adam(model.parameters(), lr=1e-2)
 for _ in range(200):
     opt.zero_grad()
     out  = model(data.x, data.edge_index)
-    loss = F.cross_entropy(out[mask], y[mask])
+    loss = F.cross_entropy(out[data.train_mask], data.y[data.train_mask])
     loss.backward(); opt.step()
 model.eval()
 
