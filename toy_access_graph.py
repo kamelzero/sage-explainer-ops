@@ -70,8 +70,27 @@ explainer = Explainer(
     ),
 )
 
-node_id = 3                                    # investigate user #3
-explanation = explainer(data.x, data.edge_index, index=node_id)
+#####################################################################
+# risk rank users and select which ones to investigate
+
+from rank_user_compromise import rank_users, broadcast_scores
+
+top_users = rank_users(data, model, k=3, node_types=
+                        ['user']*len(meta['users']) +
+                        ['system']*len(meta['systems']) +
+                        ['resource']*len(meta['resources']))
+
+print("=== highest-risk users ===")
+print(top_users)
+
+bc = broadcast_scores(data, explainer, top_users["node_id"])
+print("\n=== broadcast score ===")
+print(bc)
+
+# for now, only explain the node with highest broadcast score
+node_ids = top_users["node_id"].tolist()
+for node_id in top_users["node_id"]:
+    explanation = explainer(data.x, data.edge_index, index=node_id)
 
 # -------------------------------------------------------------------
 # 4  inspect masks
@@ -81,7 +100,7 @@ row = explanation.node_mask[node_id]           # (3,) tensor
 for w, n in sorted(zip(row.tolist(), feat_names), reverse=True):
     print(f"{n:<15} {w:6.3f}")
 
-print("\nTop-5 influential edges for node 3:")
+print("\nTop-5 influential edges for node {node_id}:")
 edge_scores = explanation.edge_mask
 edge_idx_T  = data.edge_index.t()
 top = torch.topk(edge_scores, 5)
@@ -93,66 +112,11 @@ for s, idx in zip(top.values, top.indices):
 # 5  visualise sub-graph
 # -------------------------------------------------------------------
 
-############################################################################
+#####################################################################
 # Visualise the sub-graph returned by the explainer (PyG 2.6.1)
-############################################################################
+#####################################################################
 from torch_geometric.utils import to_networkx
 import networkx as nx, matplotlib.pyplot as plt
-
-#sub_exp = explanation.get_explanation_subgraph()   # ← no args in 2.6.1
-# G       = to_networkx(sub_exp,
-#                       node_attrs=['node_mask'],
-#                       edge_attrs=['edge_mask'],
-#                       to_undirected=True)
-
-# pos   = nx.spring_layout(G, seed=2)
-# width = [G[u][v]['edge_mask']*4 for u,v in G.edges()]
-# nx.draw(G, pos,
-#         node_color=['tomato' if n == node_id else 'skyblue' for n in G.nodes()],
-#         width=width, with_labels=True)
-# plt.show()
-
-#####################
-
-# th = 0.10
-# edge_keep = explanation.edge_mask > th
-# edge_idx  = data.edge_index[:, edge_keep]
-# edge_w    = explanation.edge_mask[edge_keep]
-
-# G = nx.Graph()
-# G.add_nodes_from(range(data.num_nodes))
-# for (u,v), w in zip(edge_idx.t().tolist(), edge_w.tolist()):
-#     G.add_edge(u, v, weight=w)
-
-# pos   = nx.spring_layout(G, seed=3)
-# width = [G[u][v]['weight']*4 for u,v in G.edges()]
-# nx.draw(G, pos,
-#         node_color=['tomato' if n == node_id else 'skyblue' for n in G.nodes()],
-#         width=width, with_labels=True)
-# plt.show()
-
-# #########################
-# import networkx as nx
-# def sbm_wrap(n_users=60, n_clusters=4, p_in=0.2, p_out=0.02, seed=42):
-#     sizes = [n_users // n_clusters]*n_clusters
-#     p = [[p_in if i==j else p_out
-#           for j in range(n_clusters)] for i in range(n_clusters)]
-#     G = nx.stochastic_block_model(sizes, p, seed=seed)
-#     return G
-
-# G = sbm_wrap(n_users=60, n_clusters=4, p_in=0.2, p_out=0.02, seed=42)
-
-# #pos = nx.kamada_kawai_layout(G)        # energy-based, no ring bias#
-# pos = nx.spring_layout(G, seed=random.randint(0, 9999), k=0.3)  # new seed & k
-# # k controls edge length; lower k → tighter clusters, higher → spread
-# nx.draw(G, pos, with_labels=True, node_color='skyblue')
-# plt.show()
-
-###############################################################
-# Nicely-styled plot of the synthetic enterprise graph
-###############################################################
-import networkx as nx, matplotlib.pyplot as plt
-from torch_geometric.utils import to_networkx
 import matplotlib.patches as mpatches
 
 # 1) convert to networkx (undirected for layout simplicity)
@@ -293,11 +257,13 @@ df_edges['importance'] = edge_mask
 
 # quick semantic tag
 def tag(u, v):
-    if u < 12 and v < 12:                        # both users
-        return 'lateral'
-    if (u < 12 <= v < 18) or (v < 12 <= u < 18): # user ↔ system
-        return 'login'
-    return 'sys→res'
+    if u in users and v in users:
+        return "lateral"
+    if (u in users and v in systems) or (v in users and u in systems):
+        return "login"
+    if (u in systems and v in resources) or (v in systems and u in resources):
+        return "sys→res"
+    return "other"
 
 df_edges['kind'] = [tag(u, v) for u, v in edge_index_T]
 
@@ -317,15 +283,47 @@ df_undirected = df_undirected[['src','dst','importance','kind']]
 print(df_undirected.head(10))
 
 ############################################################
+from typing import Set
 
-def to_sentence(row):
-    u, v, w, k = int(row.src), int(row.dst), row.importance, row.kind
-    if k == 'login':
-        if u < 12:   return f"User {u} logs into system {v}  (w={w:.2f})"
-        else:        return f"User {v} logs into system {u}  (w={w:.2f})"
-    if k == 'lateral':
-        return f"User {u} shares creds with user {v}  (w={w:.2f})"
-    return f"System {u} accesses resource {v}  (w={w:.2f})"
+def build_edge_sentence_fn(users:   Set[int],
+                           systems: Set[int],
+                           resources:Set[int]):
+    """
+    Factory: returns a to_sentence(row) function bound to the three ID sets.
+    Usage
+    -----
+    to_sentence = build_edge_sentence_fn(users, systems, resources)
+    bullets = [to_sentence(r) for _, r in topk_edges.iterrows()]
+    """
+
+    def to_sentence(row: pd.Series) -> str:
+        u, v = int(row.src), int(row.dst)
+        w    = row.importance
+        kind = row.kind                 # 'login' | 'lateral' | 'sys→res'
+
+        if kind == 'login':
+            # decide direction for nicer wording
+            if u in users and v in systems:
+                return f"User {u} logs into system {v} (w={w:.2f})"
+            else:
+                return f"User {v} logs into system {u} (w={w:.2f})"
+
+        if kind == 'lateral':           # user ↔ user
+            return f"User {u} shares creds with user {v} (w={w:.2f})"
+
+        if kind == 'sys→res':           # system → resource
+            if u in systems and v in resources:
+                return f"System {u} accesses resource {v} (w={w:.2f})"
+            else:
+                return f"System {v} accesses resource {u} (w={w:.2f})"
+
+        # fallback for any unforeseen kind
+        return f"{u} – {v} (w={w:.2f}, kind={kind})"
+
+    return to_sentence
+
+to_sentence = build_edge_sentence_fn(users, systems, resources)
+bullets = [ "• "+to_sentence(r) for _, r in topk_edges.iterrows() ]
 
 bullets = "\n".join("• "+to_sentence(r) for _, r in topk_edges.iterrows())
 print(bullets)
@@ -337,5 +335,6 @@ print(bullets)
 from helper_llm_explain import explain_edges_with_llm
 import json
 
+print("=== LLM Explanation Summary ===")
 report = explain_edges_with_llm(bullets)
 print(json.dumps(report, indent=2))
