@@ -1,49 +1,27 @@
-# Overview
+# Structural Vulnerability Discovery with GNN Explainers
 
-This project considers discovery of structural vulnerabilities via node influence, using Graph Neural Netowrks (GNNs). This aims to flip a blue-team strategy (network hardening) into a target discovery tool for offensive ops.
+Tiny, reproducible sandbox that shows how **Graph Neural Networks + GNNExplainer**
+can flip a classic blue-team model (“find compromised hosts”) into a
+red-team recon tool (“which nodes/edges give me the shortest path to the crown-jewel?”).
 
-The idea is to treat a network (logical, social, communication, or access) as a graph, and use GNN explainability tools to identify critical nodes that:
+---
 
-    * exert high influence on other nodes' embeddings
-    * are bottlenecks in information flow
-    * determine classification outcomes (e.g., "malicious" vs. "benign")
+## Quick-start
 
-Once identified, these nodes become high-value targets for red teamers.
-
-
-# Setup
-
-```
-python3.11 -m venv .venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
+```bash
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt        # PyG, etc.
+export OPENAI_API_KEY="sk-..."         # for LLM summaries
 ```
 
-Set `OPENAI_API_KEY` is set in your environment variables, e.g., set it in your `~/.bashrc`.
+Run the notebook `toy_access_graph.ipynb`
 
-This is used for LLM sentence-level explanation of GNNExplainer output.
+# Key concepts
 
-# Running
-
-`python toy_access_graph.py --seed 99`
-
-# Details
-
-* What this project shows?
-
-* Why Explainability in Graphs?
-
-* How use it GNNExplainer work?
-
-* Why not just use the node classifications directly, instead of using the explainer?
-
-* What is a broadcast score and why use it?
-
-* Is this graph learning transductive or inductive?
-
-* Do we even need to train the model -- what if we don't have label data?
-    -> Deep Graph Infomax (DGI) + GraphSAGE encoder
-    -> if no labels anywhere — the encoder learned structure + feature co-occurrence
-on its own. The explainer now tells you which user→system→resource edges carry the
-most information about the target resource according to that unsupervised
-representation.
+| Term                          | What it means                                                                                                                                                       | Why you care                                                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Influence mask**            | GNNExplainer optimises soft gates on every edge and feature; any gate that cannot be closed without changing the model’s prediction is flagged **important (≈ 1)**. | Turns an opaque GNN into a minimal, human-readable sub-graph.                                                               |
+| **Broadcast score**           | For node *v*:  `Σ edge_mask[e]`  over all incident edges.                                                                                                           | Quantifies *how much* a node’s connections propagate risk or privilege—great for spotting credential hubs and choke-points. |
+| **High-value nodes**          | Mark any asset—user, system, or resource—as “HV”; run the explainer on that node instead of on a label.                                                             | Reveals the **shortest-influence path** an attacker would follow to reach the crown jewel.                                  |
+| **Inductive vs transductive** | Swap `"gcn"` (single-graph) for `"sage"` (many-graph) in one line.                                                                                                  | Lets you test whether the influence patterns generalise to unseen topologies.                                               |
+| **LLM post-processor**        | Converts the top-weight edges into JSON red/blue-team playbooks.                                                                                                    | Bridges raw masks → actionable guidance without manual wording.                                                             |
