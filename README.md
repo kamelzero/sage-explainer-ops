@@ -40,3 +40,10 @@ This is used for LLM sentence-level explanation of GNNExplainer output.
 * What is a broadcast score and why use it?
 
 * Is this graph learning transductive or inductive?
+
+* Do we even need to train the model -- what if we don't have label data?
+    -> Deep Graph Infomax (DGI) + GraphSAGE encoder
+    -> if no labels anywhere — the encoder learned structure + feature co-occurrence
+on its own. The explainer now tells you which user→system→resource edges carry the
+most information about the target resource according to that unsupervised
+representation.

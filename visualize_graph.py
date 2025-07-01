@@ -1,5 +1,5 @@
 #####################################################################
-# Visualise the sub-graph returned by the explainer (PyG 2.6.1)
+# Visualise the graph
 #####################################################################
 from torch_geometric.utils import to_networkx
 import networkx as nx, matplotlib.pyplot as plt
@@ -21,6 +21,11 @@ def visualize_graph(data, meta,
     compromised = set(meta['compromised'])
     admins      = set(meta['admins'])
 
+    # high-value resources may or may not be present
+    high_value  = set(meta.get('high_value', []))        # empty set if key absent
+    hv_resources = resources & high_value                # subset of green diamonds
+    std_resources = resources - high_value               # remaining resources
+
     # 3) layout - multipartite keeps layers separate
     for n in G.nodes():
         if n in users:       G.nodes[n]['layer'] = 0
@@ -37,12 +42,20 @@ def visualize_graph(data, meta,
     nx.draw_networkx_nodes(G, pos,
         nodelist=list(compromised),
         node_color="#ff6666", node_size=400, edgecolors='k', linewidths=1.0, label="Compromised")
+
     nx.draw_networkx_nodes(G, pos,
         nodelist=list(systems),
         node_color="#ffbe5c", node_shape='s', node_size=450, edgecolors='k', linewidths=0.4, label="System")
+
     nx.draw_networkx_nodes(G, pos,
-        nodelist=list(resources),
-        node_color="#7ec87e", node_shape='D', node_size=450, edgecolors='k', linewidths=0.4, label="Resource")
+        nodelist=list(std_resources),                    # draw normal resources first
+        node_color="#7ec87e", node_shape='D',
+        node_size=450, edgecolors='k', linewidths=0.4, label="Resource")
+    # draw high-value resources as red diamonds
+    nx.draw_networkx_nodes(G, pos,
+        nodelist=list(hv_resources),
+        node_color="#ff4d4d", node_shape='D',
+        node_size=520, edgecolors='k', linewidths=1.2, label="High-value resource")
 
     # highlight admins with a thick ring
     nx.draw_networkx_nodes(G, pos,
@@ -79,22 +92,15 @@ def visualize_graph(data, meta,
         nx.draw_networkx_labels(G, pos, font_size=8)
 
     # 7) legend
-    handles = [
-        mpatches.Patch(color="#66a3ff", label="User"),
-        mpatches.Patch(color="#ff6666", label="Compromised user"),
-        mpatches.Patch(color="#ffbe5c", label="System",  ec='k'),
-        mpatches.Patch(color="#7ec87e", label="Resource", ec='k'),
-        mpatches.Patch(facecolor='none', edgecolor='navy', label="Admin ring", linewidth=2)
-    ]
-
     from matplotlib.lines import Line2D
     node_handles = [
         Line2D([0],[0], marker='o', color='w', markerfacecolor='#66a3ff', label='User'),
         Line2D([0],[0], marker='o', color='w', markerfacecolor='#ff6666', label='Compromised user'),
         Line2D([0],[0], marker='s', color='w', markerfacecolor='#ffbe5c', label='System'),
         Line2D([0],[0], marker='D', color='w', markerfacecolor='#7ec87e', label='Resource'),
+        Line2D([0],[0], marker='D', color='w', markerfacecolor='#ff4d4d', label='High-value resource'),  # ← NEW
         Line2D([0],[0], marker='o', markersize=15, markerfacecolor='none',
-            markeredgecolor='navy', label='Admin ring', linewidth=2)
+               markeredgecolor='navy', linewidth=2, label='Admin ring'),
     ]
 
     edge_handles = [
@@ -103,11 +109,10 @@ def visualize_graph(data, meta,
         Line2D([0],[0], color='#228B22', lw=1.2, linestyle='dotted', label='System → Resource')
     ]
 
-    # ax.legend(handles=node_handles+edge_handles, frameon=False, loc='upper right',
-    #           ncol=3, fontsize=9)
     leg = ax.legend(handles=node_handles + edge_handles,
                     loc="center left",
                     bbox_to_anchor=(1.02, 0.5),      # just outside axes
+                    fontsize=8,
                     frameon=False)
 
     # ----------  score panels  -----------------------------------------
@@ -136,7 +141,5 @@ def visualize_graph(data, meta,
                 fontfamily="monospace", va='top', ha='left')
     # ----------  score panels  -----------------------------------------
 
-    # plt.tight_layout()
-    # ax.set_axis_off()
     plt.tight_layout()
     plt.show()
