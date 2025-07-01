@@ -1,18 +1,10 @@
-######################################################################
-# 0   install deps  (only once, from a shell)
-#     ---------------------------------------------------------------
-#     python -m venv venv && . venv/bin/activate
-#     pip install torch==2.2.0 torch_geometric==2.6.1 networkx matplotlib
-######################################################################
-
-import torch, random, networkx as nx, matplotlib.pyplot as plt
+import torch
 import torch.nn.functional as F
-from torch_geometric.data     import Data
 from torch_geometric.nn       import GCNConv
 from torch_geometric.explain  import Explainer, GNNExplainer
 from torch_geometric.explain.config import ModelConfig, ModelMode
-from torch_geometric.utils    import to_networkx
-
+from gnn_factory import build_gnn
+from helper_tabular import TabularData, NodeCategories, get_node_types
 
 # -------------------------------------------------------------------
 # 1  build the toy "access" graph
@@ -30,15 +22,11 @@ data, meta = generate_access_graph(
 # -------------------------------------------------------------------
 # 2  tiny GCN
 # -------------------------------------------------------------------
-class GCN(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = GCNConv(3, 8)
-        self.conv2 = GCNConv(8, 2)
-    def forward(self, x, ei):
-        return self.conv2(F.relu(self.conv1(x, ei)), ei)
-
-model = GCN()
+MODEL_NAME = "sage"          # <── swap "gcn"  /  "sage"
+model = build_gnn(MODEL_NAME,
+                  in_dim=3,
+                  hidden=32,
+                  n_classes=2)
 opt = torch.optim.Adam(model.parameters(), lr=1e-2)
 for _ in range(200):
     opt.zero_grad()
@@ -62,10 +50,6 @@ explainer = Explainer(
         return_type='raw',                     # logits
     ),
 )
-
-#####################################################################
-
-from helper_tabular import TabularData, NodeCategories, get_node_types
 
 #####################################################################
 # risk rank users and select which ones to investigate
@@ -107,16 +91,7 @@ for s, idx in zip(top.values, top.indices):
 # -------------------------------------------------------------------
 
 from visualize_graph import visualize_graph
-visualize_graph(data, meta)
-
-############################################################
-
-node_categories = NodeCategories(meta)
-
-tabular_data = TabularData(data, meta, explanation, node_id)
-df_nodes = tabular_data.get_per_node_info()
-df_edges = tabular_data.get_per_edge_info()
-topk_edges = tabular_data.get_topk_edges()
+visualize_graph(data, meta, top_users, bc)
 
 ############################################################
 
@@ -124,6 +99,10 @@ topk_edges = tabular_data.get_topk_edges()
 
 from helper_llm_explain import explain_edges_with_llm, build_edge_sentence_fn
 import json
+
+node_categories = NodeCategories(meta)
+tabular_data = TabularData(data, meta, explanation, node_id)
+topk_edges = tabular_data.get_topk_edges()
 
 to_sentence = build_edge_sentence_fn(node_categories.users, node_categories.systems, node_categories.resources)
 bullets = [ "• "+to_sentence(r) for _, r in topk_edges.iterrows() ]

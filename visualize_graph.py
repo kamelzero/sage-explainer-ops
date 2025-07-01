@@ -4,8 +4,13 @@
 from torch_geometric.utils import to_networkx
 import networkx as nx, matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import pandas as pd
 
-def visualize_graph(data, meta):
+def visualize_graph(data, meta,
+                    risk_df: pd.DataFrame | None = None,
+                    bc_df:   pd.DataFrame | None = None,
+                    k: int = 3,
+                    figsize: tuple[int, int] = (10, 4)):
     # 1) convert to networkx (undirected for layout simplicity)
     G = to_networkx(data, to_undirected=True)
 
@@ -104,6 +109,33 @@ def visualize_graph(data, meta):
                     loc="center left",
                     bbox_to_anchor=(1.02, 0.5),      # just outside axes
                     frameon=False)
+
+    # ----------  score panels  -----------------------------------------
+    def panel_lines(df, title, col, k=3):
+        lines = [title] + [
+            f"{int(nid):>3} : {score:.3f}"
+            for nid, score in zip(df['node_id'].head(k), df[col].head(k))
+        ]
+        return "\n".join(lines)
+
+    # Use the same anchor as the legend, but shift downward.
+    x_anchor, y_anchor = 1.02, 0.26   # tweak second number to control vertical gap
+
+    if risk_df is not None:
+        txt_risk = panel_lines(risk_df.sort_values('p_compromised', ascending=False),
+                            "Top-k Risk (p)", 'p_compromised', k=3)
+        ax.text(x_anchor, y_anchor, txt_risk,
+                transform=ax.transAxes, fontsize=8,
+                fontfamily="monospace", va='top', ha='left')
+
+    if bc_df is not None:
+        txt_bc = panel_lines(bc_df.sort_values('broadcast_score', ascending=False),
+                            "Top-k Broadcast", 'broadcast_score', k=3)
+        ax.text(x_anchor, y_anchor - 0.14, txt_bc,    # 0.14 ≈ line-height gap
+                transform=ax.transAxes, fontsize=8,
+                fontfamily="monospace", va='top', ha='left')
+    # ----------  score panels  -----------------------------------------
+
     # plt.tight_layout()
     # ax.set_axis_off()
     plt.tight_layout()
