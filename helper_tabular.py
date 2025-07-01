@@ -1,4 +1,5 @@
 import pandas as pd
+import torch
 
 class NodeCategories:
     def __init__(self, meta):
@@ -12,6 +13,41 @@ def get_node_types(meta):
     return ['user']     * len(meta['users']) \
            + ['system']   * len(meta['systems']) \
            + ['resource'] * len(meta['resources'])
+
+def edge_kind(u: int, v: int,
+              users: set[int],
+              systems: set[int],
+              resources: set[int]) -> str:
+    if u in users and v in users:
+        return "lateral"
+    if (u in users and v in systems) or (v in users and u in systems):
+        return "login"
+    if (u in systems and v in resources) or (v in systems and u in resources):
+        return "sys→res"
+    return "other"
+
+def explain_resource_paths(data, meta, explainer, resource_id, top_k=10):
+    """
+    Returns a DataFrame of top-K edges and a set of most relevant nodes.
+    This is used to explain the resource paths.
+    """
+    exp = explainer(data.x, data.edge_index, index=resource_id)
+    edge_idx_T = data.edge_index.t()
+    vals, idxs = torch.topk(exp.edge_mask, k=top_k)
+    rows = []
+    nodes = set([resource_id])
+    for w, ei in zip(vals.tolist(), idxs.tolist()):
+        u, v = edge_idx_T[ei].tolist()
+        rows.append({
+            "src": u, "dst": v,
+            "importance": w,
+            "kind": edge_kind(u, v,
+                            users=set(meta['users']),
+                            systems=set(meta['systems']),
+                            resources=set(meta['resources']))
+        })
+        nodes.update((u, v))
+    return pd.DataFrame(rows), nodes
 
 class TabularData:
     def __init__(self, data, meta, explanation, node_id):
@@ -56,15 +92,11 @@ class TabularData:
         df_edges = pd.DataFrame(edge_index_T, columns=['src', 'dst'])
         df_edges['importance'] = edge_mask
         # quick semantic tag
-        nc = NodeCategories(self.meta)
         def tag(u, v):
-            if u in nc.users and v in nc.users:
-                return "lateral"
-            if (u in nc.users and v in nc.systems) or (v in nc.users and u in nc.systems):
-                return "login"
-            if (u in nc.systems and v in nc.resources) or (v in nc.systems and u in nc.resources):
-                return "sys→res"
-            return "other"
+            return edge_kind(u, v,
+                             users=set(self.meta['users']),
+                             systems=set(self.meta['systems']),
+                             resources=set(self.meta['resources']))
         edge_index_T = self.data.edge_index.t().tolist()    # 46 tuples in the same order
         df_edges['kind'] = [tag(u, v) for u, v in edge_index_T]
         return df_edges

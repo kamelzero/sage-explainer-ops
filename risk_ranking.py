@@ -67,23 +67,3 @@ def broadcast_scores(data: Data,
         rows.append({"node_id": nid, "broadcast_score": score})
     return pd.DataFrame(rows).sort_values("broadcast_score",
                                           ascending=False).reset_index(drop=True)
-
-
-# ---------------- example usage ---------------------------------------
-if __name__ == "__main__":
-    from generate_access_graph import generate_access_graph
-    from model_and_explainer import model, explainer  # wherever you defined them
-
-    data, meta = generate_access_graph(seed=42)
-
-    top_users = rank_users(data, model, k=3, node_types=
-                           ['user']*len(meta['users']) +
-                           ['system']*len(meta['systems']) +
-                           ['resource']*len(meta['resources']))
-
-    print("=== highest-risk users ===")
-    print(top_users)
-
-    bc = broadcast_scores(data, explainer, top_users["node_id"])
-    print("\n=== broadcast score ===")
-    print(bc)

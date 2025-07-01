@@ -11,6 +11,7 @@ def generate_access_graph(n_users: int = 30,
                           p_lateral: float = 0.05,
                           p_sys_access: float = 0.45,
                           p_compromised: float = 0.15,
+                          high_value_ratio: float = 0.15,   # % of resources
                           seed: int | None = None):
     """
     Returns
@@ -34,6 +35,8 @@ def generate_access_graph(n_users: int = 30,
     num_nodes  = n_users + n_systems + n_resources
 
     # ----- node features --------------------------------------------------------
+    data_feature_names = ["is_admin", "login_freq", "anomaly_score"]
+
     x = torch.zeros((num_nodes, 3))
     # feature[0] = admin flag (pick two random admins)
     admins = random.sample(users, k=max(1, n_users // 10))
@@ -92,10 +95,19 @@ def generate_access_graph(n_users: int = 30,
     train_mask = torch.zeros(num_nodes, dtype=torch.bool)
     train_mask[users] = True      # usually you train only on user nodes
 
-    data = Data(x=x, edge_index=edge_index, y=y, train_mask=train_mask)
+    # pick high-value resources
+    n_high = max(1, int(high_value_ratio * n_resources))
+    high_value = random.sample(resources, k=n_high)
+    # tag in feature[2] for non-high (optional visual difference)
+    for r in resources:
+        if r not in high_value:
+            x[r, 2] = 0.0     # no "anomaly" at start
 
+    data = Data(x=x, edge_index=edge_index, y=y, train_mask=train_mask)
     meta = dict(users=users, systems=systems, resources=resources,
-                compromised=compromised, admins=admins)
+                high_value=high_value,
+                compromised=compromised, admins=admins,
+                data_feature_names=data_feature_names)
     return data, meta
 
 
