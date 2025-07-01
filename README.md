@@ -22,3 +22,21 @@ uv pip install -r requirements.txt
 Set `OPENAI_API_KEY` is set in your environment variables, e.g., set it in your `~/.bashrc`.
 
 This is used for LLM sentence-level explanation of GNNExplainer output.
+
+# Running
+
+`python toy_access_graph.py --seed 99`
+
+# Details
+
+* What this project shows?
+
+* Why Explainability in Graphs?
+
+* How use it GNNExplainer work?
+
+* Why not just use the node classifications directly, instead of using the explainer?
+
+* What is a broadcast score and why use it?
+
+* Is this graph learning transductive or inductive?
